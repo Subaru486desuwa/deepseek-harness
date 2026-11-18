@@ -1,11 +1,13 @@
 /**
  * Sidebar slot contract: the registrant-side props composition for the
  * layout-owned `sidebar` slot, plus the holes this shell declares. The shell
- * owns column geometry, the brand row, New Session, and global panel rows;
- * everything between the workspace section header and the list bottom is the
- * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
- * `sidebar.settings` registrant's (ui-settings), followed by optional footer
- * actions in `sidebar.footer.action`.
+ * owns column geometry, the brand row, and global panel rows; the primary
+ * action below the brand row is the `sidebar.primary.action` occupant's, with
+ * New Session as the shell fallback; everything between the workspace section
+ * header and the list bottom is the `sidebar.workspaces` registrant's
+ * (ui-workspace), and the foot is the `sidebar.settings` registrant's
+ * (ui-settings), followed by optional footer actions in
+ * `sidebar.footer.action`.
  */
 import type { RefCallback } from 'react'
 import type {
@@ -47,6 +49,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'sidebar.panellist': { kind: 'list'; scope: 'root'; owner: SidebarPanelIconOwnerProps }
     /** Rows of the panel list's More menu; the sidebar shows More only while this list has registrations. */
     'sidebar.panellist.actions': { kind: 'list'; scope: 'root'; owner: SidebarPanelActionsOwnerProps }
+    /**
+     * The primary action between the brand row and the global panel rows.
+     * Declared by this package's 'sidebar' entry; without an occupant the
+     * shell renders the New Session row, with its `sidebar.session.action`
+     * layer, while the access snapshot allows `session/create`. An occupant
+     * replaces that whole row, including its decorations, access check,
+     * tooltip, rail and Windows-caption placement, and analytics; the
+     * brand-row shortcut and the `session.new` command still start a New
+     * Session.
+     */
+    'sidebar.primary.action': { kind: 'single'; scope: 'root'; owner: SidebarPrimaryActionOwnerProps }
     /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
@@ -146,6 +159,12 @@ export interface SidebarPanelActionsOwnerProps {
   readonly onPinnedChange: (id: string, pinned: boolean) => void
   /** Close the More menu. */
   readonly onDismiss: () => void
+}
+
+/** Owner share of the primary action seat below the brand row. */
+export interface SidebarPrimaryActionOwnerProps {
+  /** Whether the sidebar renders wide content (false = 56px rail). */
+  wide: boolean
 }
 
 /**
@@ -252,6 +271,7 @@ export type SidebarRootComponentProps =
     | 'sidebar.brand.name'
     | 'sidebar.toggle.badge'
     | 'sidebar.panellist.actions'
+    | 'sidebar.primary.action'
     | 'sidebar.workspaces'
     | 'sidebar.settings'
     | 'sidebar.footer.action'

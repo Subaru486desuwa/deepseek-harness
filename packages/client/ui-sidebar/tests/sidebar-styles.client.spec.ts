@@ -179,6 +179,14 @@ describe('SidebarRoot.module.css', () => {
     expect(document.querySelectorAll('.railIn .newSessionRow > *')).toHaveLength(1)
   })
 
+  it('fades the New-session row through the primary action slot anchor', () => {
+    const selector = ".fading > :global([data-slot='sidebar.primary.action']) > *"
+    const fade = declarations(selector)
+    expect(fade?.get('opacity')).toBe('0')
+    expect(fade?.get('transition')).toBe(declarations('.fading > *')?.get('transition'))
+    expect(reducedMotion()).toContain(selector)
+  })
+
   it('gives shell rail controls the same base anchor for their shared translation', () => {
     expect(declarations('.collapsed .logoRow')?.get('justify-content')).toBe('flex-start')
     expect(declarations('.collapsed .newSessionRow')?.get('align-items')).toBe('flex-start')

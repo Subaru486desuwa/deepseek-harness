@@ -6,10 +6,12 @@
  * mid-slide. At settle the wide-only content unmounts and the upper
  * controls enter the 56px rail from the same horizontal offset (one icon each,
  * same top-down order) on one fade that ends with the slide. The bottom-pinned
- * settings control only fades. The workspace/session browsing region between
- * global panel rows and the foot is the `sidebar.workspaces` registrant's,
- * and the foot holds `sidebar.settings` plus `sidebar.footer.action`; the shell
- * hands them the wide flag (plus an expand request callback for the browser).
+ * settings control only fades. The primary action below the brand row is the
+ * `sidebar.primary.action` occupant's, with the New Session row as the shell
+ * fallback; the workspace/session browsing region between global panel rows
+ * and the foot is the `sidebar.workspaces` registrant's, and the foot holds
+ * `sidebar.settings` plus `sidebar.footer.action`; the shell hands them the
+ * wide flag (plus an expand request callback for the browser).
  * Through the browser's hookContext, the shell also hands it the scroller hook
  * that continues wheel scrolling over the sidebar viewport into its list.
  *
@@ -345,33 +347,35 @@ export function SidebarRoot({
       </div>
 
       {/* The label fades before the hover/focus shortcut, including on translucent backgrounds. */}
-      {canStartSession && (
-        <div className={css.newSessionRow}>
-          {renderSlot('sidebar.session.action', { wide }, {
-            children: (
-              <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
-                <button
-                  type="button"
-                  className={css.newSession}
-                  aria-label={t('session.new.label')}
-                  aria-keyshortcuts={newShortcut?.aria}
-                  onClick={openNewSession}
-                >
-                  <span className={css.newSessionLabelMask}><span className={css.newSessionContent}>
-                    {wide
-                      ? <IconNewChatOutlineMedium size={14} />
-                      : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
-                    {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
-                  </span></span>
-                  {wide && newShortcut !== undefined && newShortcut.keys.length > 0 && <span className={css.newSessionShortcut} aria-hidden="true">
-                    <ShortcutKeys keys={newShortcut.keys} />
-                  </span>}
-                </button>
-              </Tooltip>
-            ),
-          })}
-        </div>
-      )}
+      {renderSlot('sidebar.primary.action', { wide }, {
+        fallback: canStartSession && (
+          <div className={css.newSessionRow}>
+            {renderSlot('sidebar.session.action', { wide }, {
+              children: (
+                <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
+                  <button
+                    type="button"
+                    className={css.newSession}
+                    aria-label={t('session.new.label')}
+                    aria-keyshortcuts={newShortcut?.aria}
+                    onClick={openNewSession}
+                  >
+                    <span className={css.newSessionLabelMask}><span className={css.newSessionContent}>
+                      {wide
+                        ? <IconNewChatOutlineMedium size={14} />
+                        : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
+                      {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
+                    </span></span>
+                    {wide && newShortcut !== undefined && newShortcut.keys.length > 0 && <span className={css.newSessionShortcut} aria-hidden="true">
+                      <ShortcutKeys keys={newShortcut.keys} />
+                    </span>}
+                  </button>
+                </Tooltip>
+              ),
+            })}
+          </div>
+        ),
+      })}
 
       <div className={css.scrollRegion}>
         <div

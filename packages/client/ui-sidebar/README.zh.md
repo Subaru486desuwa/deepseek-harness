@@ -11,7 +11,7 @@ kind: "package-reference"
 
 ## 概述
 
-dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将导航折叠为 56px 轨道、浏览 Workspace 与 Session，以及打开 Settings。它会将 Settings 入口固定在底部，并在隐藏空闲滚动条时避免浏览器行发生位移。New Session 优先使用显式选择的 Workspace，其次使用当前 Session 所属的 Workspace，再其次使用最近活跃的 Workspace；如果都不存在，则打开空白的 New Session 页面。部署可以替换品牌标记或名称，同时保留导航控件和轨道几何。
+dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将导航折叠为 56px 轨道、浏览 Workspace 与 Session，以及打开 Settings。它会将 Settings 入口固定在底部，并在隐藏空闲滚动条时避免浏览器行发生位移。New Session 优先使用显式选择的 Workspace，其次使用当前 Session 所属的 Workspace，再其次使用最近活跃的 Workspace；如果都不存在，则打开空白的 New Session 页面。部署可以替换品牌标记或名称，同时保留导航控件和轨道几何；插件可以用自己的主操作替换 New Session 行。
 
 ## 目录
 
@@ -36,6 +36,8 @@ dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将
 侧边栏完全隐藏时，Web 的标题栏只显示展开侧边栏按钮。挂载该标题栏插槽的桌面宿主还会保留新建会话按钮；带有原生标题栏的 Windows 客户端则在原生标题栏中保留该按钮。
 
 展开的品牌行把 `sidebar.brand.mark` 与 `sidebar.brand.name` 渲染为两个独立的 single slot；收起轨道则渲染同一个 mark slot。在 Web 和 Windows 桌面端，点击展开态的品牌会新建会话，悬停或聚焦时不显示 tooltip。没有占位者时，外壳使用鱼形标记和本地化的本地构建标签。完整构建会在标签下方显示代码徽标；该徽标使用 `DSH_CLIENT_VERSION`、可选的 7 位 `DSH_CLIENT_COMMIT_HASH` 与 `DSH_CLIENT_GIT_DIRTY=true` 组装成 `version[-commit][-dirty]`；缺少版本元数据时不显示徽标。此类构建中点击回退的标记或标签会复制该徽标文本而非新建会话，macOS 桌面端同样适用；写入成功后弹出“版本号复制成功”toast。New Session 优先使用作用域操作明确指定的 Workspace，否则使用当前 Session 所属 Workspace，再否则使用最近活跃 Workspace；一个 Workspace 都没有时则清空选择，进入空白 New Session 页面。 展开态的新建会话按钮在键盘聚焦时于右侧以灰色文字显示当前有效绑定，不受设备悬停能力限制；支持悬停的设备也会在悬停时显示。快捷键可见且空间较窄时，居中的图标与文字在快捷键之前渐隐；CSS 为快捷键保留宽度，无需测量按钮。纯图标控件保留使用平台键位样式的 tooltip，侧栏隐藏时常驻的 macOS 头部控件也保持一致。所有控件均提供 `aria-keyshortcuts`。全局访问快照不含 `session/create` 时，品牌行不可点击，New Session 按钮和窗口标题栏中的 New Session 控件都不渲染；每个新建请求仍由 Host 判定。
+
+插件通过 root 作用域的 single slot `sidebar.primary.action` 替换 New Session 行；该 slot 位于品牌行与全局面板行之间，接收 `{ wide }`。没有占位者时，外壳渲染带有 `sidebar.session.action` 层的 New Session 行。占位者替换整行，包括其装饰、tooltip、`session/create` 访问检查、轨道与 Windows 标题栏中的位置以及埋点；品牌行与 `session.new` 命令仍会新建会话。折叠时，占位者随侧栏内容一起渐隐，但不参与进入轨道时的平移。以更低的 `priority` 注册会遮蔽已有占位者，释放该注册会恢复下一个占位者或 New Session 行，因此插件可以在其面板被选中期间注册自己的主操作，并在之后释放。
 
 ### 全局面板入口
 
@@ -80,7 +82,7 @@ root 作用域的 `sidebar.session.action` 是包裹新建会话行内容的 HOC
 <details>
 <summary>实现细节——点击展开</summary>
 
-外壳是纯组合：`SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 与 `useWorkspaces` 钩子、已声明的品牌、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的导航回调。侧边栏声明 `sidebar.panel.icon` Component Factory，由它拥有 `sidebar.panellist` list；面板行和更多菜单都通过该 factory 渲染面板注册的图标。面板元数据由列表注册和 locale 变化派生；选中态属于布局存储。注入的 `trackEntryClick(attributes)` 转发到 `ctx.get('productAnalytics')?.track('sidebar_menu_click', attributes)`；`selectPanel` 只负责选中，因此由各控件自行提供入口与位置。
+外壳是纯组合：`SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 与 `useWorkspaces` 钩子、已声明的品牌、`sidebar.primary.action`、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的导航回调。侧边栏声明 `sidebar.panel.icon` Component Factory，由它拥有 `sidebar.panellist` list；面板行和更多菜单都通过该 factory 渲染面板注册的图标。面板元数据由列表注册和 locale 变化派生；选中态属于布局存储。注入的 `trackEntryClick(attributes)` 转发到 `ctx.get('productAnalytics')?.track('sidebar_menu_click', attributes)`；`selectPanel` 只负责选中，因此由各控件自行提供入口与位置。
 
 展开态导航的左右外距为 8px，悬停与选中底色在两侧各内缩 3px，前置单元宽 16px，与标签间隔 6px。新会话内容居中，所在行保留 4px 左右外边距及 6px 底部外边距。导航额外保留滚动区外的 4px 与滚动区内、随内容滚走的 8px 间距。logo 行无底部外边距；内容从侧栏左边缘向内 16px 开始，标记与名称间隔 5px。仅 macOS 非全屏、侧栏展开时，顶部开关向右偏移 4px，并在整个淡出期间保持该偏移。折叠态尺寸独立保留。
 
@@ -132,6 +134,7 @@ root 作用域的 `sidebar.session.action` 是包裹新建会话行内容的 HOC
 - **Session 状态点渲染由 ui-workspace 持有**：本外壳没有可用的 done/error 通知数据源。
 - **Workspace 浏览行为由组合持有**：分组、排序、搜索与行状态都属于 ui-workspace，不属于此外壳。
 - **复制本地构建版本号仅支持鼠标**：键盘激活品牌会新建会话。
+- **macOS 窗口标题栏中的 New Session 控件没有 slot**：侧栏隐藏、New Session 移到红绿灯旁时，即使 `sidebar.primary.action` 有占位者，该控件仍会新建会话。
 - **只有滚轮和触控板输入能在一次手势中越过导航边界**：触摸拖动保持浏览器原生的嵌套滚动，在视口滚到底时停止；不支持滚动状态容器查询的浏览器会先滚动区块。由 JavaScript 分配的滚轮步进在主线程执行，没有平滑滚动动画，也没有越界回弹。
 
 <a id="dev-note"></a>

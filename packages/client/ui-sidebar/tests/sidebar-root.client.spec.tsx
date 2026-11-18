@@ -3,20 +3,26 @@ import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Menu, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { allowAllAccess, makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import type {
-  SidebarFooterActionOwnerProps, SidebarPanelMetadata, SidebarRootComponentProps, SidebarSectionHookContext, SidebarSectionOwnerProps,
-  SidebarSessionActionOwnerProps,
-  SidebarSettingsOwnerProps,
+  SidebarFooterActionOwnerProps, SidebarPanelMetadata, SidebarPrimaryActionOwnerProps, SidebarRootComponentProps,
+  SidebarSectionHookContext, SidebarSectionOwnerProps, SidebarSessionActionOwnerProps, SidebarSettingsOwnerProps,
 } from '../src/client/contract/slots.ts'
+import { apply, inject } from '../src/client/index.ts'
 import { HeaderLeadingControls, type HeaderLeadingControlsProps } from '../src/client/HeaderLeadingControls.tsx'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
 import { en } from '../src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -51,13 +57,19 @@ function makeHeaderProps(): HeaderLeadingControlsProps {
   }
 }
 
-function mountShell({ collapsed = false, width = 300, drawer = false, shortcuts = [], panels = [], content }: {
+function mountShell({
+  collapsed = false, width = 300, drawer = false, shortcuts = [], panels = [], content, primaryAction,
+  useRemoteAccess = allowAllAccess.useRemoteAccess,
+}: {
   collapsed?: boolean
   width?: number
   drawer?: boolean
   shortcuts?: readonly ShortcutCatalogEntry[]
   panels?: readonly SidebarPanelMetadata[]
   content?: ReactNode
+  /** Occupant of `sidebar.primary.action`; omitted renders the shell fallback. */
+  primaryAction?: ReactNode
+  useRemoteAccess?: SidebarRootComponentProps['useRemoteAccess']
 } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
@@ -68,6 +80,7 @@ function mountShell({ collapsed = false, width = 300, drawer = false, shortcuts 
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
   let sessionActionOwner: SidebarSessionActionOwnerProps | undefined
   let sessionActionChildren: ReactNode
+  let primaryActionOwner: SidebarPrimaryActionOwnerProps | undefined
   const brandMark = <span data-testid="custom-brand-mark">M</span>
   const brandName = <span data-testid="custom-brand-name">Custom Brand</span>
   let current = { collapsed, width, drawer }
@@ -81,17 +94,23 @@ function mountShell({ collapsed = false, width = 300, drawer = false, shortcuts 
       useShortcuts={selector => selector(shortcuts)}
       useContextMenu={contextMenuHook()} useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
+      useRemoteAccess={useRemoteAccess}
       startSession={startSession} toggleSidebar={toggleSidebar} trackEntryClick={trackEntryClick} t={t}
       renderFactorySlot={() => null}
       renderSlot={((
         key: string,
-        owner: SidebarFooterActionOwnerProps | SidebarSectionOwnerProps | SidebarSessionActionOwnerProps | SidebarSettingsOwnerProps,
-        opts?: { hookContext?: SidebarSectionHookContext; children?: ReactNode },
+        owner: SidebarFooterActionOwnerProps | SidebarPrimaryActionOwnerProps | SidebarSectionOwnerProps
+          | SidebarSessionActionOwnerProps | SidebarSettingsOwnerProps,
+        opts?: { hookContext?: SidebarSectionHookContext; children?: ReactNode; fallback?: ReactNode },
       ) => {
         if (key === 'sidebar.brand.mark') return brandMark
         if (key === 'sidebar.brand.name') return brandName
         if (key === 'sidebar.toggle.badge') return null
         if (key === 'sidebar.panellist') return <span aria-hidden="true">P</span>
+        if (key === 'sidebar.primary.action') {
+          primaryActionOwner = owner
+          return primaryAction ?? opts?.fallback ?? null
+        }
         if (key === 'sidebar.settings') {
           settingsOwner = owner
           return <div data-testid="settings-seat" data-wide={owner.wide} />
@@ -137,6 +156,10 @@ function mountShell({ collapsed = false, width = 300, drawer = false, shortcuts 
       return sessionActionOwner
     },
     sessionActionChildren: () => sessionActionChildren,
+    primaryActionOwner: () => {
+      if (primaryActionOwner === undefined) throw new Error('primary action owner not rendered')
+      return primaryActionOwner
+    },
     rerender(next: Partial<typeof current>) {
       current = { ...current, ...next }
       view.rerender(root())
@@ -241,10 +264,10 @@ describe('SidebarRoot shell', () => {
       useRemoteAccess={useRemoteAccess}
       startSession={startSession} toggleSidebar={toggleSidebar} trackEntryClick={vi.fn()} t={t}
       renderFactorySlot={() => null}
-      renderSlot={((key: string) => {
+      renderSlot={((key: string, _owner: unknown, options?: { fallback?: ReactNode }) => {
         if (key === 'sidebar.brand.mark') return <span data-testid="brand-mark">M</span>
         if (key === 'sidebar.brand.name') return <span data-testid="brand-name">Brand</span>
-        return null
+        return options?.fallback ?? null
       }) as SidebarRootComponentProps['renderSlot']}
     />)
 
@@ -761,4 +784,112 @@ it.each([false, true])('moves hidden sidebar focus only to an available opener (
   const expected = hasOpener ? screen.getByRole('button', { name: 'Open navigation' }) : previous
   expect(document.activeElement).toBe(expected)
   if (hasOpener) expect(expected.hasAttribute('data-dsh-automatic-focus')).toBe(true)
+})
+
+describe('sidebar.primary.action seat', () => {
+  it('hands an occupant the wide flag in place of the New Session row', () => {
+    vi.useFakeTimers()
+    const b = mountShell({ primaryAction: <button type="button">New chat</button> })
+    // The occupant replaces the row and its session-action layer; the brand row still starts and reports a Session.
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy()
+    expect(screen.queryByTestId('session-action-seat')).toBeNull()
+    const starters = screen.getAllByRole('button', { name: 'New session' })
+    expect(starters).toHaveLength(1)
+    expect(b.primaryActionOwner().wide).toBe(true)
+    fireEvent.click(starters[0]!)
+    expect(b.startSession).toHaveBeenCalledOnce()
+    expect(b.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'sidebar' })
+    // The flag follows the column through the collapse crossfade into the rail.
+    b.rerender({ collapsed: true })
+    expect(b.primaryActionOwner().wide).toBe(true)
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(b.primaryActionOwner().wide).toBe(false)
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'New session' })).toBeNull()
+  })
+
+  it('renders an occupant while the access snapshot excludes session/create', () => {
+    mountShell({
+      primaryAction: <button type="button">New chat</button>,
+      useRemoteAccess: action => action !== 'session/create',
+    })
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'New session' })).toBeNull()
+  })
+})
+
+describe('sidebar.primary.action through the slot renderer', () => {
+  const runtimes = new Set<SlotTestRuntime>()
+  afterEach(async () => {
+    try {
+      for (const runtime of runtimes) await runtime.dispose()
+    } finally {
+      runtimes.clear()
+    }
+  })
+
+  /** A replacement primary action that exposes its owner share. */
+  function NewChatAction({ wide }: PropsRuntime<'sidebar.primary.action'>) {
+    return <button type="button" data-wide={wide}>New chat</button>
+  }
+
+  function Frame({ renderSlot }: PropsRenderSlots<'sidebar'>) {
+    return renderSlot('sidebar', { collapsed: false, width: 300, drawer: false })
+  }
+
+  async function bench() {
+    const runtime = await SlotTestRuntime.create()
+    runtimes.add(runtime)
+    const locale = new LocaleRuntime(runtime.ctx)
+    locale.setLocale('en')
+    const startSession = vi.fn()
+    const layout = {
+      panelInfo: runtime.panelInfo,
+      beginNavigation: vi.fn(() => new AbortController().signal),
+      toggleSidebar: vi.fn(),
+      selectPanel: vi.fn(),
+      openRightbar: vi.fn(),
+      closeRightbar: vi.fn(),
+    } satisfies ILayout
+    await runtime.mount({
+      inject: ['slots'],
+      apply(ctx: Context) {
+        ctx.provide('shortcuts', { catalog: createSnapshotStore([]) } as never)
+        ctx.provide('layout', layout)
+        ctx.provide('uiWorkspace', { startSession } as never)
+        ctx.provide('locale', locale)
+        ctx.effect(() => locale.register('common', { zh: commonZh, en: commonEn }), 'primary action test: common locale')
+        ctx.slots.installLocale(locale)
+      },
+    })
+    await runtime.root.declare({ sidebar: { kind: 'single', scope: 'root' } }, Frame)
+    await runtime.mount({ inject: [...inject], apply })
+    return { runtime, startSession, view: runtime.renderRoot() }
+  }
+
+  it('shows New Session by default and a registered occupant only while it is registered', async () => {
+    const { runtime, startSession, view } = await bench()
+    expect(view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+
+    const occupant = await runtime.mount({
+      inject: ['slots'],
+      apply(ctx: Context) {
+        ctx.slots.inject('sidebar.primary.action', () => ctx.slots.register(
+          { name: 'sidebar.primary.action' }, NewChatAction,
+        ))
+      },
+    })
+    const replacement = await view.findByRole('button', { name: 'New chat' })
+    expect(replacement.dataset.wide).toBe('true')
+    // The brand row keeps its New Session shortcut beside the occupant.
+    const starters = view.getAllByRole('button', { name: 'New session' })
+    expect(starters).toHaveLength(1)
+    fireEvent.click(starters[0]!)
+    expect(startSession).toHaveBeenCalledOnce()
+
+    await occupant.dispose()
+    await waitFor(() => { expect(view.queryByRole('button', { name: 'New chat' })).toBeNull() })
+    expect(view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+    expect(runtime.slots.entries('sidebar.primary.action')).toEqual([])
+  })
 })

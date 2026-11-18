@@ -146,8 +146,11 @@
 }
 
 /* Collapse phase 1: the whole frozen-width content fades out in place over
-   150ms; at settle the children unmount/snap to the rail layout. */
-.fading > * {
+   150ms; at settle the children unmount/snap to the rail layout. The primary
+   action renders inside its display:contents slot anchor, which generates no
+   box for opacity, so the fade targets the anchor's children. */
+.fading > *,
+.fading > :global([data-slot='sidebar.primary.action']) > * {
   opacity: 0;
   transition: opacity 150ms var(--ds-ease-in-out);
 }
@@ -842,6 +845,7 @@
   :global([data-animating]:not([data-dragging])) .root,
   .wide,
   .fading > *,
+  .fading > :global([data-slot='sidebar.primary.action']) > *,
   .railIn .iconButton,
   .railIn .newSessionRow > :global([data-slot='sidebar.session.action']) > *,
   .railIn .panelList,
