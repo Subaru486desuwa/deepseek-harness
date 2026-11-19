@@ -4,6 +4,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
@@ -11,6 +12,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-props merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SidebarPanelMetadata, SidebarRootInjected } from './contract/slots.ts'
+import { SidebarPrimaryActionService } from './primary-action.ts'
+import { primaryActionView } from './primary-action-view.tsx'
 import { createPanelPins } from './panel-pins.ts'
 import { HeaderLeadingControls } from './HeaderLeadingControls.tsx'
 import { SidebarRoot } from './SidebarRoot.tsx'
@@ -21,6 +24,9 @@ export type {
   SidebarPanelActionEntry, SidebarPanelActionsOwnerProps, SidebarPanelIconOwnerProps, SidebarPanelMetadata,
   SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
+export type {
+  ActiveSidebarPrimaryAction, SidebarPrimaryAction, SidebarPrimaryActionIconProps, SidebarPrimaryActions,
+} from './primary-action.ts'
 export type { SidebarKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -34,8 +40,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'sidebar'
 
 interface WorkspaceNavigation {
-  startSession(workspaceId?: Parameters<SidebarRootInjected['startSession']>[0]): void
+  startSession(): void
 }
+
+/** Default bindings of the `session.new` command, which runs the primary action. */
+const NEW_BINDING = { code: 'KeyN', modifiers: ['primary'] } as const
+const NEW_WEB_BINDING = { code: 'KeyN', modifiers: ['primary', 'alt'] } as const
 
 /** Services required by the sidebar plugin. */
 export const inject = ['slots', 'layout', 'uiWorkspace', 'locale', 'shortcuts']
@@ -68,15 +78,25 @@ export function apply(ctx: ClientContext): void {
     subscribe: (listener: () => void) => ctx.slots.subscribe('sidebar.panellist.actions', listener),
   }
 
+  const primaryActions = new SidebarPrimaryActionService(ctx)
+  const runPrimaryAction = (): void => {
+    const active = primaryActions.active.getSnapshot()
+    // New Session rides the Workspace UI's shared action (current Session Workspace, then recent Workspace).
+    if (active === undefined) workspaceNavigation.startSession()
+    else if (active.blocked === null) active.action.run()
+  }
+  installPrimaryShortcut(ctx, primaryActions, runPrimaryAction)
+
   const injectProps = (): SidebarRootInjected => ({
-    // The shell's New Session button rides the Workspace UI's shared action
-    // (current Session Workspace, then recent Workspace).
-    startSession: (workspaceId) => { workspaceNavigation.startSession(workspaceId) },
+    runPrimaryAction,
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
     selectPanel: (id) => { ctx.layout.selectPanel(id) },
     setPinned: panelPins.setPinned,
     trackEntryClick: (attributes) => { ctx.get('productAnalytics')?.track('sidebar_menu_click', attributes) },
-    hooks: { panels, shortcuts: ctx.shortcuts.catalog, entryPins: panelPins.unpinned, entryActions },
+    hooks: {
+      panels, shortcuts: ctx.shortcuts.catalog, entryPins: panelPins.unpinned, entryActions,
+      primaryAction: primaryActions.active,
+    },
   })
   ctx.slots.inject('sidebar', () => ctx.slots.register({
     name: 'sidebar',
@@ -93,8 +113,8 @@ export function apply(ctx: ClientContext): void {
     },
     inject: injectProps,
   }, SidebarRoot))
-  // macOS desktop hides the collapsed sidebar entirely, so the open/New
-  // Session controls move into the frame's window-chrome seat beside the
+  // macOS desktop hides the collapsed sidebar entirely, so the open and
+  // primary action controls move into the frame's window-chrome seat beside the
   // traffic lights; the occupant reuses the shell's injected actions, and
   // the AppFrame mounts the seat only while the column is fully hidden.
   ctx.slots.inject('shell.leading', () => ctx.slots.register({
@@ -103,4 +123,49 @@ export function apply(ctx: ClientContext): void {
     inject: injectProps,
   }, HeaderLeadingControls))
   syncPanels()
+}
+
+/**
+ * Register `session.new` as the keyboard entry to the primary action. The
+ * command id and default bindings stay those of New Session so persisted
+ * keybinding overrides keep applying. The catalog reads labels only at
+ * registration and locale change, so a new active action re-registers it.
+ * @param ctx - Sidebar plugin context; its disposal removes the command.
+ * @param primaryActions - The sidebar's primary action registry.
+ * @param run - Runs the active primary action.
+ */
+function installPrimaryShortcut(
+  ctx: ClientContext, primaryActions: SidebarPrimaryActionService, run: () => void,
+): void {
+  const t = ctx.locale.bind(NS)
+  const register = (): (() => void) => ctx.shortcuts.register({
+    id: 'session.new' as ShortcutCommandId,
+    label: () => primaryActionView(primaryActions.active.getSnapshot(), t).label,
+    aliases: ['new session', 'new chat'],
+    defaults: {
+      'desktop:macos': NEW_BINDING, 'desktop:windows': NEW_BINDING, 'desktop:linux': NEW_BINDING,
+      'web:macos': NEW_WEB_BINDING, 'web:windows': NEW_WEB_BINDING,
+    },
+    regions: ['page', 'editable'],
+    modals: [],
+    resolve: () => {
+      const blocked = primaryActions.active.getSnapshot()?.blocked ?? null
+      return blocked === null ? { status: 'handled', run } : { status: 'blocked', reason: blocked }
+    },
+  })
+  ctx.effect(() => {
+    let current = primaryActions.active.getSnapshot()?.action
+    let off = register()
+    const stop = primaryActions.active.subscribe(() => {
+      const next = primaryActions.active.getSnapshot()?.action
+      if (next === current) return
+      current = next
+      off()
+      off = register()
+    })
+    return () => {
+      stop()
+      off()
+    }
+  }, 'ui-sidebar: primary action shortcut')
 }

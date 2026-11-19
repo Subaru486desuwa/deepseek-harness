@@ -35,7 +35,7 @@ async function bench(declare = true) {
   await ctx.plugin(SlotRegistry).await()
   const layout = { toggleSidebar: vi.fn(), selectPanel: vi.fn() }
   const uiWorkspace = { startSession: vi.fn() }
-  ctx.provide('shortcuts', { catalog: createSnapshotStore([]) } as never)
+  ctx.provide('shortcuts', { catalog: createSnapshotStore([]), register: () => () => {} } as never)
   ctx.provide('layout', layout)
   ctx.provide('uiWorkspace', uiWorkspace as never)
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -81,16 +81,15 @@ describe('ui-sidebar apply', () => {
     expect(leading[0]!.locale).toBe('sidebar')
     expect(leading[0]!.inject).toBe(b.slots.entries('sidebar')[0]!.inject)
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
-    expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar', 'selectPanel', 'setPinned', 'trackEntryClick', 'hooks'])
+    expect(Object.keys(injected)).toEqual(['runPrimaryAction', 'toggleSidebar', 'selectPanel', 'setPinned', 'trackEntryClick', 'hooks'])
     expect(injected.hooks.panels.getSnapshot()).toEqual([])
     expect(injected.hooks.entryPins.getSnapshot()).toEqual([])
     expect(injected.hooks.entryActions.getSnapshot()).toBe(false)
+    expect(injected.hooks.primaryAction.getSnapshot()).toBeUndefined()
     expect(b.slots.entries('main')).toEqual([])
-    // Both arms delegate to the Workspace UI's shared New Session action.
-    injected.startSession('workspace' as never)
-    expect(b.uiWorkspace.startSession).toHaveBeenCalledWith('workspace')
-    injected.startSession()
-    expect(b.uiWorkspace.startSession).toHaveBeenLastCalledWith(undefined)
+    // Without a plugin primary action, the shared Workspace UI New Session action runs.
+    injected.runPrimaryAction()
+    expect(b.uiWorkspace.startSession).toHaveBeenCalledExactlyOnceWith()
     injected.toggleSidebar()
     expect(b.layout.toggleSidebar).toHaveBeenCalledOnce()
     const panelId = 'custom-panel' as MainPanelId

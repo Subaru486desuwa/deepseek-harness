@@ -79,15 +79,16 @@ describe('workspace shortcut ownership', () => {
     b.controls.add()
     expect(b.controls.state.getSnapshot().addRequested).toBe(false)
   })
-  it('registers six commands with Desktop and Web defaults and removes registrations with the plugin', async () => {
+  it('registers five commands with Desktop and Web defaults and removes registrations with the plugin', async () => {
     const b = await bench()
+    // `session.new` belongs to ui-sidebar, which runs the sidebar primary action.
     expect(b.registry.catalog.getSnapshot().map(row => row.id)).toEqual([
-      'session.new', 'session.search', 'workspace.add', 'session.rename', 'session.fork', 'session.archive',
+      'session.search', 'workspace.add', 'session.rename', 'session.fork', 'session.archive',
     ])
     expect(b.registry.catalog.getSnapshot().every(row => row.keys.length > 0)).toBe(true)
     const web = await bench('web')
     expect(web.registry.catalog.getSnapshot().map(row => row.aria)).toEqual([
-      'Alt+Meta+N', 'Alt+Meta+K', 'Alt+Meta+O', 'Alt+Meta+G', 'Shift+Meta+F', 'Alt+Meta+A',
+      'Alt+Meta+K', 'Alt+Meta+O', 'Alt+Meta+G', 'Shift+Meta+F', 'Alt+Meta+A',
     ])
     await b.fiber.dispose()
     expect(b.registry.catalog.getSnapshot()).toEqual([])
@@ -127,15 +128,9 @@ describe('workspace shortcut ownership', () => {
     expect(b.controls.state.getSnapshot().renameTarget?.sessionId).toBe('a')
   })
 
-  it('uses the owner for new/search/add from terminals and modals while preserving repeat and directory occupancy', async () => {
+  it('uses the owner for search/add from terminals and modals while preserving directory occupancy', async () => {
     const b = await bench()
     const consume = vi.fn()
-    expect(b.registry.dispatch(key('KeyN'), context, consume).status).toBe('handled')
-    b.registry.dispatch(key('KeyN', { repeat: true }), context, consume)
-    expect(b.navigation.startSession).toHaveBeenCalledOnce()
-    expect(b.registry.dispatch(key('KeyN'), { ...context, modal: 'settings' }, consume).status).toBe('handled')
-    expect(b.registry.dispatch(key('KeyN'), { ...context, region: 'terminal' }, consume).status).toBe('handled')
-    expect(b.navigation.startSession).toHaveBeenCalledTimes(3)
     b.registry.dispatch(key('KeyK'), context, consume)
     expect(b.controls.state.getSnapshot().searchRequest).toBe(1)
     b.registry.dispatch(key('KeyO'), context, consume)

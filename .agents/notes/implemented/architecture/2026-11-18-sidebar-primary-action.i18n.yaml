@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-18-sidebar-primary-action.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-18-sidebar-primary-action.md
+/agent-note-sidebar-primary-action-registration:
+  en: 188cc1a4ebe5b537
+  zh: 92a6ff9ec5eb7635
+/agent-note-sidebar-primary-action-registration/problem:
+  en: 08474086d27484cd
+  zh: 4db444dc5d942a82
+/agent-note-sidebar-primary-action-registration/decision:
+  en: 460aaa2106fa2b0c
+  zh: c98a212c441dd9c3
+/agent-note-sidebar-primary-action-registration/alternatives-considered:
+  en: de4ecc9afce83301
+  zh: a5669ce45b241487
+/agent-note-sidebar-primary-action-registration/consequences:
+  en: 021709d5395eb3bb
+  zh: 8614f12c13aa20e8

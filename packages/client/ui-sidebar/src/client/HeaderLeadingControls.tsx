@@ -1,12 +1,11 @@
 /** Window-chrome controls for the fully hidden sidebar (frame shell.leading seat). */
-import {
-  IconNewChatOutlineRegular, IconPanelLeftOutlineRegular, Tooltip,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPanelLeftOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the frame's shell.leading slot declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SidebarRootInjected } from './contract/slots.ts'
 import css from './HeaderLeadingControls.module.css'
+import { primaryActionView } from './primary-action-view.tsx'
 
 /** Full props of the shell.leading occupant. */
 export type HeaderLeadingControlsProps =
@@ -15,19 +14,22 @@ export type HeaderLeadingControlsProps =
   & PropsLocale<'sidebar'>
 
 /**
- * Sidebar-open and New Session controls in the frame's window-chrome seat.
+ * Sidebar-open and primary action controls in the frame's window-chrome seat.
  * On macOS desktop a collapsed sidebar hides entirely (no rail), taking both
  * controls off screen; this occupant puts them back beside the traffic
  * lights. The frame mounts the seat only in that state and owns its
  * placement, so the occupant renders unconditionally.
  * @param props - Injected sidebar actions, the global access Hook, and the sidebar locale seat.
- * @returns the sidebar toggle, plus the New Session control while the access snapshot allows `session/create`.
+ * @returns the sidebar toggle, plus the primary action while a plugin offers one or the access snapshot allows `session/create`.
  */
 export function HeaderLeadingControls({
-  toggleSidebar, startSession, trackEntryClick, useRemoteAccess, useShortcuts, t,
+  toggleSidebar, runPrimaryAction, trackEntryClick, useRemoteAccess, useShortcuts, usePrimaryAction, t,
 }: HeaderLeadingControlsProps) {
-  // A page whose access snapshot excludes starting a Session keeps only the sidebar toggle here.
+  const active = usePrimaryAction(snapshot => snapshot)
+  const primary = primaryActionView(active, t)
+  // Without a plugin action, a page whose access snapshot excludes starting a Session keeps only the sidebar toggle.
   const canStartSession = useRemoteAccess('session/create')
+  const showPrimary = active !== undefined || canStartSession
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
   return (
@@ -43,19 +45,21 @@ export function HeaderLeadingControls({
           <IconPanelLeftOutlineRegular size={16} />
         </button>
       </Tooltip>
-      {canStartSession && (
-        <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500}>
+      {showPrimary && (
+        <Tooltip label={primary.ariaLabel} shortcutKeys={newShortcut?.keys} delayMs={500}>
           <button
             type="button"
             className={css.iconButton}
-            aria-label={t('session.new.label')}
+            aria-label={primary.ariaLabel}
             aria-keyshortcuts={newShortcut?.aria}
+            disabled={primary.blocked}
             onClick={() => {
-              trackEntryClick({ menu_name: 'new_session', position: 'titlebar' })
-              startSession()
+              // Only New Session is an official entry for analytics.
+              if (active === undefined) trackEntryClick({ menu_name: 'new_session', position: 'titlebar' })
+              runPrimaryAction()
             }}
           >
-            <IconNewChatOutlineRegular size={16} />
+            {primary.glyph(16, 'regular')}
           </button>
         </Tooltip>
       )}

@@ -35,13 +35,14 @@ const neverHook = (() => { throw new Error('shell must not read global hooks') }
 type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSessionStatus']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: SidebarRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
+const noPrimaryAction: SidebarRootComponentProps['usePrimaryAction'] = selector => selector(undefined)
 
 function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
   collapsed?: boolean
   width?: number
   shortcuts?: readonly ShortcutCatalogEntry[]
 } = {}) {
-  const startSession = vi.fn()
+  const runPrimaryAction = vi.fn()
   const toggleSidebar = vi.fn()
   const trackEntryClick = vi.fn<SidebarRootComponentProps['trackEntryClick']>()
   let regionOwner: SidebarSectionOwnerProps | undefined
@@ -59,7 +60,8 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
       useShortcuts={selector => selector(shortcuts)}
       useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
-      startSession={startSession} toggleSidebar={toggleSidebar} trackEntryClick={trackEntryClick} t={t}
+      usePrimaryAction={noPrimaryAction} runPrimaryAction={runPrimaryAction}
+      toggleSidebar={toggleSidebar} trackEntryClick={trackEntryClick} t={t}
       renderSlot={((
         key: string,
         owner: SidebarFooterActionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
@@ -82,7 +84,7 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
   )
   const view = render(root())
   return {
-    startSession,
+    runPrimaryAction,
     toggleSidebar,
     trackEntryClick,
     regionOwner: () => {
@@ -118,7 +120,8 @@ describe('SidebarRoot shell', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
     expect(Array.from(expanded.querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', 'N'])
     cleanup()
-    render(<HeaderLeadingControls toggleSidebar={vi.fn()} startSession={vi.fn()} selectPanel={vi.fn()} trackEntryClick={vi.fn()} t={t}
+    render(<HeaderLeadingControls toggleSidebar={vi.fn()} usePrimaryAction={noPrimaryAction} runPrimaryAction={vi.fn()}
+      selectPanel={vi.fn()} trackEntryClick={vi.fn()} t={t}
       usePanelInfo={neverHook} useSessions={neverHook} useSessionStatus={neverHook}
       useSessionRetainInfo={neverHook} useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
@@ -139,12 +142,12 @@ describe('SidebarRoot shell', () => {
     const starters = screen.getAllByRole('button', { name: 'New session' })
     expect(starters).toHaveLength(2)
     for (const button of starters) fireEvent.click(button)
-    expect(b.startSession).toHaveBeenCalledTimes(2)
+    expect(b.runPrimaryAction).toHaveBeenCalledTimes(2)
     expect(b.trackEntryClick.mock.calls).toEqual([
       [{ menu_name: 'new_session', position: 'sidebar' }],
       [{ menu_name: 'new_session', position: 'sidebar' }],
     ])
-    expect(b.trackEntryClick.mock.invocationCallOrder[0]).toBeLessThan(b.startSession.mock.invocationCallOrder[0]!)
+    expect(b.trackEntryClick.mock.invocationCallOrder[0]).toBeLessThan(b.runPrimaryAction.mock.invocationCallOrder[0]!)
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
     expect(b.trackEntryClick).toHaveBeenCalledTimes(2)
@@ -153,13 +156,13 @@ describe('SidebarRoot shell', () => {
   it('reports the collapsed rail New Session as a sidebar click outside the Windows caption', () => {
     const b = mountShell({ collapsed: true, width: 56 })
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    expect(b.startSession).toHaveBeenCalledOnce()
+    expect(b.runPrimaryAction).toHaveBeenCalledOnce()
     expect(b.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'sidebar' })
   })
 
   it('offers no New Session control while the access snapshot excludes session/create', () => {
     const toggleSidebar = vi.fn()
-    const startSession = vi.fn()
+    const runPrimaryAction = vi.fn()
     const useRemoteAccess = vi.fn((action: string) => action !== 'session/create')
     render(<SidebarRoot
       collapsed={false} width={300}
@@ -170,7 +173,7 @@ describe('SidebarRoot shell', () => {
       useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
       useRemoteAccess={useRemoteAccess}
-      startSession={startSession} toggleSidebar={toggleSidebar} trackEntryClick={vi.fn()} t={t}
+      usePrimaryAction={noPrimaryAction} runPrimaryAction={runPrimaryAction} toggleSidebar={toggleSidebar} trackEntryClick={vi.fn()} t={t}
       renderSlot={((key: string) => {
         if (key === 'sidebar.brand.mark') return <span data-testid="brand-mark">M</span>
         if (key === 'sidebar.brand.name') return <span data-testid="brand-name">Brand</span>
@@ -185,7 +188,36 @@ describe('SidebarRoot shell', () => {
     expect(screen.getByTestId('brand-name')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(toggleSidebar).toHaveBeenCalledOnce()
-    expect(startSession).not.toHaveBeenCalled()
+    expect(runPrimaryAction).not.toHaveBeenCalled()
+  })
+
+  it('keeps a plugin primary action while the access snapshot excludes session/create', () => {
+    const runPrimaryAction = vi.fn()
+    const trackEntryClick = vi.fn()
+    const Icon = ({ size }: { size: number }) => <svg data-testid="plugin-icon" data-size={size} />
+    const usePrimaryAction: SidebarRootComponentProps['usePrimaryAction'] = selector => selector({
+      action: { id: 'probe', label: 'New probe', icon: Icon, run: vi.fn() }, blocked: null,
+    })
+    const props = {
+      collapsed: true, width: 56,
+      useSessions: neverHook, useSessionStatus, useSessionRetainInfo: neverHook,
+      usePanelInfo, selectPanel: () => {}, usePanels: selector => selector([]), useEntryPins: selector => selector([]),
+      useEntryActions: selector => selector(false), setPinned: vi.fn(), useShortcuts: selector => selector([]),
+      useResource, useWorkspaces: neverHook, ...allowAllAccess,
+      useRemoteAccess: (action: string) => action !== 'session/create',
+      usePrimaryAction, runPrimaryAction, toggleSidebar: vi.fn(), trackEntryClick, t,
+      renderSlot: (() => null) as SidebarRootComponentProps['renderSlot'],
+    } as SidebarRootComponentProps
+    render(<SidebarRoot {...props} />)
+    // The collapsed rail shows the plugin glyph at rail size and runs the action without New Session analytics.
+    const button = screen.getByRole('button', { name: 'New probe' })
+    expect(screen.getByTestId('plugin-icon').getAttribute('data-size')).toBe('18')
+    fireEvent.click(button)
+    expect(runPrimaryAction).toHaveBeenCalledOnce()
+    expect(trackEntryClick).not.toHaveBeenCalled()
+    cleanup()
+    render(<HeaderLeadingControls {...props} />)
+    expect(screen.getByRole('button', { name: 'New probe' })).toBeTruthy()
   })
 
   it('renders generic brand fallbacks when no package fills the slots', () => {
@@ -200,7 +232,7 @@ describe('SidebarRoot shell', () => {
       useShortcuts={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
-      startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
+      usePrimaryAction={noPrimaryAction} runPrimaryAction={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
@@ -223,7 +255,7 @@ describe('SidebarRoot shell', () => {
       useShortcuts={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
-      startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
+      usePrimaryAction={noPrimaryAction} runPrimaryAction={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
@@ -241,7 +273,7 @@ describe('SidebarRoot shell', () => {
       .mockRejectedValueOnce(new Error('denied'))
       .mockResolvedValueOnce(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const startSession = vi.fn()
+    const runPrimaryAction = vi.fn()
     const trackEntryClick = vi.fn<SidebarRootComponentProps['trackEntryClick']>()
     render(<SidebarRoot
       collapsed={false} width={300}
@@ -251,7 +283,7 @@ describe('SidebarRoot shell', () => {
       useShortcuts={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
-      startSession={startSession} toggleSidebar={vi.fn()} trackEntryClick={trackEntryClick} t={t}
+      usePrimaryAction={noPrimaryAction} runPrimaryAction={runPrimaryAction} toggleSidebar={vi.fn()} trackEntryClick={trackEntryClick} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
@@ -280,14 +312,14 @@ describe('SidebarRoot shell', () => {
     expect(documentClick).toHaveBeenCalledOnce()
     expect(writeText).toHaveBeenCalledTimes(3)
     expect(copiedToasts()).toEqual(['Version copied'])
-    expect(startSession).not.toHaveBeenCalled()
+    expect(runPrimaryAction).not.toHaveBeenCalled()
     // Copying the version is not a New Session click.
     expect(trackEntryClick).not.toHaveBeenCalled()
 
     // The rest of the brand button still starts and reports a session.
     if (!darwin) {
       fireEvent.click(screen.getAllByRole('button', { name: 'New session' })[0]!)
-      expect(startSession).toHaveBeenCalledOnce()
+      expect(runPrimaryAction).toHaveBeenCalledOnce()
       expect(trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'sidebar' })
     }
   })
@@ -301,7 +333,7 @@ describe('SidebarRoot shell', () => {
       useShortcuts={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
-      startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
+      usePrimaryAction={noPrimaryAction} runPrimaryAction={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
@@ -351,7 +383,7 @@ describe('SidebarRoot shell', () => {
       useShortcuts={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
       {...allowAllAccess}
-      startSession={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
+      usePrimaryAction={noPrimaryAction} runPrimaryAction={vi.fn()} toggleSidebar={vi.fn()} trackEntryClick={vi.fn()} t={t}
       renderSlot={((key: string) => key === 'sidebar.toggle.badge'
         ? <Tooltip label="Update — V1.2.3"><span data-testid="badge" /></Tooltip>
         : null) as SidebarRootComponentProps['renderSlot']}
@@ -388,19 +420,19 @@ it('keeps the macOS sidebar toggle in its top strip', () => {
 
 it('wires the shell.leading controls to the shared sidebar actions', () => {
   const toggleSidebar = vi.fn()
-  const startSession = vi.fn()
+  const runPrimaryAction = vi.fn()
   const trackEntryClick = vi.fn<HeaderLeadingControlsProps['trackEntryClick']>()
   // This occupant only consumes its actions, the global access Hook, and locale, not Session hooks.
-  const props = { toggleSidebar, startSession, trackEntryClick, t, useRemoteAccess: allowAllAccess.useRemoteAccess, useShortcuts: select => select([{ id: 'sidebar.left.toggle' as ShortcutCommandId, label: 'Toggle sidebar', aliases: [], binding: null, modified: false, conflicts: [], issue: null, keys: ['⌘', 'B'], aria: 'Meta+B' }]) } as HeaderLeadingControlsProps
+  const props = { toggleSidebar, runPrimaryAction, trackEntryClick, t, usePrimaryAction: noPrimaryAction, useRemoteAccess: allowAllAccess.useRemoteAccess, useShortcuts: select => select([{ id: 'sidebar.left.toggle' as ShortcutCommandId, label: 'Toggle sidebar', aliases: [], binding: null, modified: false, conflicts: [], issue: null, keys: ['⌘', 'B'], aria: 'Meta+B' }]) } as HeaderLeadingControlsProps
   render(<HeaderLeadingControls {...props} />)
   fireEvent.click(screen.getByRole('button', { name: en['toggle.open'] }))
   expect(toggleSidebar).toHaveBeenCalledOnce()
   expect(trackEntryClick).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: en['session.new.label'] }))
-  expect(startSession).toHaveBeenCalledOnce()
+  expect(runPrimaryAction).toHaveBeenCalledOnce()
   // The window-chrome New Session control reports a titlebar click before starting the Session.
   expect(trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'titlebar' })
-  expect(trackEntryClick.mock.invocationCallOrder[0]).toBeLessThan(startSession.mock.invocationCallOrder[0]!)
+  expect(trackEntryClick.mock.invocationCallOrder[0]).toBeLessThan(runPrimaryAction.mock.invocationCallOrder[0]!)
   cleanup()
 
   // A page whose access snapshot excludes starting a Session keeps only the sidebar toggle.
@@ -416,7 +448,7 @@ describe('Windows caption New Session analytics', () => {
     document.documentElement.setAttribute('data-windows-titlebar', '')
     const b = mountShell({ collapsed: true, width: 0 })
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    expect(b.startSession).toHaveBeenCalledOnce()
+    expect(b.runPrimaryAction).toHaveBeenCalledOnce()
     expect(b.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'titlebar' })
   })
 
@@ -426,7 +458,7 @@ describe('Windows caption New Session analytics', () => {
     const starters = screen.getAllByRole('button', { name: 'New session' })
     expect(starters).toHaveLength(2)
     for (const button of starters) fireEvent.click(button)
-    expect(b.startSession).toHaveBeenCalledTimes(2)
+    expect(b.runPrimaryAction).toHaveBeenCalledTimes(2)
     expect(b.trackEntryClick.mock.calls).toEqual([
       [{ menu_name: 'new_session', position: 'sidebar' }],
       [{ menu_name: 'new_session', position: 'sidebar' }],

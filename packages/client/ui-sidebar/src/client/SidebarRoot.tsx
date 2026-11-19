@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FishLogo, IconAppsAddOutlineRegular, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular,
+  FishLogo, IconAppsAddOutlineRegular, IconPanelLeftOutlineRegular,
   isDarwinDesktop, Menu, ShortcutKeys, Toast, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -27,6 +27,7 @@ import type {
   SidebarPanelActionsOwnerProps, SidebarPanelMetadata, SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps,
 } from './contract/slots.ts'
 import { FIXED_PANEL_ID } from './panel-pins.ts'
+import { primaryActionView } from './primary-action-view.tsx'
 import css from './SidebarRoot.module.css'
 
 /** Wide-content unmount delay; matches the 150ms wide-content fade-out. */
@@ -130,7 +131,7 @@ function PanelMoreMenu({ wide, label, entries, onOpen, onPinnedChange, trackEntr
 export function SidebarRoot({
   collapsed,
   width,
-  startSession,
+  runPrimaryAction,
   toggleSidebar,
   selectPanel,
   setPinned,
@@ -141,6 +142,7 @@ export function SidebarRoot({
   useEntryActions,
   useShortcuts,
   usePanelInfo,
+  usePrimaryAction,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
@@ -150,8 +152,12 @@ export function SidebarRoot({
   const hasEntryActions = useEntryActions(registered => registered)
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
-  // A page whose access snapshot excludes starting a Session offers no New Session affordance.
+  const active = usePrimaryAction(snapshot => snapshot)
+  const primary = primaryActionView(active, t)
+  // A page whose access snapshot excludes starting a Session offers no New
+  // Session affordance; a plugin primary action does not start a Session.
   const canStartSession = useRemoteAccess('session/create')
+  const showPrimary = active !== undefined || canStartSession
   const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
@@ -163,10 +169,13 @@ export function SidebarRoot({
   }, [collapsed])
   const windowsTitlebar = document.documentElement.hasAttribute('data-windows-titlebar')
   const wide = windowsTitlebar ? !collapsed : !collapsed || !settled
-  // The Windows titlebar hosts the New Session controls while the sidebar is collapsed.
-  const openNewSession = (): void => {
-    trackEntryClick({ menu_name: 'new_session', position: windowsTitlebar && collapsed ? 'titlebar' : 'sidebar' })
-    startSession()
+  // The Windows titlebar hosts the primary action while the sidebar is collapsed.
+  // Only New Session is an official entry for analytics.
+  const openPrimaryAction = (): void => {
+    if (active === undefined) {
+      trackEntryClick({ menu_name: 'new_session', position: windowsTitlebar && collapsed ? 'titlebar' : 'sidebar' })
+    }
+    runPrimaryAction()
   }
   // The Windows caption menus occupy the strip to the right of these controls
   // (that is what --dsh-windows-menu-start reserves), so a right-side bubble
@@ -281,8 +290,8 @@ export function SidebarRoot({
           traffic lights and keeps the toggle at the sidebar's top-right. */}
       {darwinDesktop && <div className={css.topStrip} data-window-drag>{toggle}</div>}
       <div className={css.logoRow} data-window-drag>
-        {/* Expanded, the brand doubles as a New Session shortcut while the
-            access snapshot allows `session/create` — except on
+        {/* Expanded, the brand doubles as a primary action shortcut while
+            that action is offered — except on
             macOS, where it stays part of the logo row's window-drag surface
             (a button would subtract itself through the global no-drag rule);
             the collapsed rail's logo is the expand toggle below instead.
@@ -311,17 +320,18 @@ export function SidebarRoot({
               </span>
             </span>
           )
-          return darwinDesktop || !canStartSession
+          return darwinDesktop || !showPrimary
             ? <span className={clsx(css.brand, css.wide)}>{identity}</span>
             : (
               <button
                 type="button"
                 className={clsx(css.brand, css.wide)}
-                aria-label={t('session.new.label')}
+                aria-label={primary.ariaLabel}
                 aria-keyshortcuts={newShortcut?.aria}
+                aria-disabled={primary.blocked || undefined}
                 onClick={(event) => {
                   if ((event.target as Element).closest('[data-copy-version]') !== null) return
-                  openNewSession()
+                  openPrimaryAction()
                 }}
               >
                 {identity}
@@ -332,20 +342,19 @@ export function SidebarRoot({
       </div>
 
       {/* The label fades before the hover/focus shortcut, including on translucent backgrounds. */}
-      {canStartSession && (
-        <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
+      {showPrimary && (
+        <Tooltip label={primary.ariaLabel} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
           <button
             type="button"
             className={css.newSession}
-            aria-label={t('session.new.label')}
+            aria-label={primary.ariaLabel}
             aria-keyshortcuts={newShortcut?.aria}
-            onClick={openNewSession}
+            disabled={primary.blocked}
+            onClick={openPrimaryAction}
           >
             <span className={css.newSessionLabelMask}><span className={css.newSessionContent}>
-              {wide
-                ? <IconNewChatOutlineMedium size={14} />
-                : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
-              {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
+              {wide ? primary.glyph(14, 'medium') : primary.glyph(windowsTitlebar ? 16 : 18, 'regular')}
+              {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{primary.label}</span>}
             </span></span>
             {wide && newShortcut !== undefined && newShortcut.keys.length > 0 && <span className={css.newSessionShortcut} aria-hidden="true">
               <ShortcutKeys keys={newShortcut.keys} />

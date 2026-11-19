@@ -1,7 +1,7 @@
 /**
  * Sidebar slot contract: the registrant-side props composition for the
  * layout-owned `sidebar` slot, plus the holes this shell declares. The shell
- * owns column geometry, the brand row, New Session, and global panel rows;
+ * owns column geometry, the brand row, the primary action, and global panel rows;
  * everything between the workspace section header and the list bottom is the
  * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
  * `sidebar.settings` registrant's (ui-settings), followed by optional footer
@@ -9,10 +9,10 @@
  */
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ProductEventMap } from '@deepseek-ai/dsh-client-product-analytics/client'
+import type { ActiveSidebarPrimaryAction } from '../primary-action.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -150,11 +150,11 @@ export interface SidebarFooterActionOwnerProps {
  */
 export type SidebarRootInjected = {
   /**
-   * Start a New Session: with a workspace, reuse-or-create its blank session
-   * and open it; without one, inherit the current Session Workspace, then the
-   * recent Workspace, or clear into the New Session pure view when none exist.
+   * Run the active primary action. With no plugin registration it starts a
+   * New Session, inheriting the current Session Workspace, then the recent
+   * Workspace; a blocked registration does nothing.
    */
-  startSession: (workspaceId?: WorkspaceId) => void
+  runPrimaryAction: () => void
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
   /** Select the global panel addressed by a sidebar row. */
@@ -175,6 +175,8 @@ export type SidebarRootInjected = {
     entryPins: ObservableSnapshot<readonly string[]>
     /** Whether `sidebar.panellist.actions` has registrations. */
     entryActions: ObservableSnapshot<boolean>
+    /** Active plugin primary action; undefined selects New Session. */
+    primaryAction: ObservableSnapshot<ActiveSidebarPrimaryAction | undefined>
   }
 }
 
